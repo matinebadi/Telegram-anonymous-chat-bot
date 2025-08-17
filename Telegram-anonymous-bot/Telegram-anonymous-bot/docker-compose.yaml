@@ -1,0 +1,151 @@
+version: '3.5'
+
+services:
+  telegram_anonymous_bot:
+    restart: always
+    build:
+      context: .
+      args:
+        REPOSITORY: ${REPOSITORY}
+    volumes:
+      - .env:/code/.env
+      - ./storage:/code/storage
+    env_file:
+      - .env
+    command: [ "python" , "-m" , "telegram_anonymous_bot" ]
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "10"
+    depends_on:
+      - mysql
+      - torproxy
+      - phpmyadmin
+    networks:
+      - backend
+
+  torproxy:
+    restart: always
+    deploy:
+      replicas: 1
+    image: ${REPOSITORY:-docker.io}/dperson/torproxy
+#    ports:
+#      - "8118:8118"
+  #    - "9050:9050"
+    networks:
+      - backend
+
+  postgres:
+    image: postgres
+    restart: always
+    environment:
+      # To connect to the PostgreSQL database run the following command
+      # psql -h localhost -p 15432 -U admin -d mydb
+      - POSTGRES_USER=${MYSQL_USER}
+      - POSTGRES_PASSWORD=${MYSQL_PASSWORD}
+      - POSTGRES_DB=${MYSQL_DATABASE}
+    ports:
+      - "15432:5432"
+    volumes:
+      # Pass volume named mysql-data to mysql container
+      - "./postgresql-data:/var/lib/postgresql/data"
+    networks:
+      - backend
+
+  dbadmin:
+    depends_on:
+      - postgres
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "16543:80"
+    networks:
+      - backend
+
+  mysql:
+    image: ${REPOSITORY:-docker.io}/library/mysql:8.0
+    container_name: telegram_anonymous_bot_mysql
+    hostname: mysql
+    restart: always
+    env_file:
+      - .env
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - ${MYSQL_PORT}:3306
+    volumes:
+      - ./mysql/logs/:/var/log/mysql/
+      - ./mysql/data/:/var/lib/mysql/
+      - ./mysql/initdb.d/:/docker-entrypoint-initdb.d/
+      - ./mysql/extra/:/extra/
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "10"
+    networks:
+      - backend
+
+  phpmyadmin:
+    restart: always
+    image: ${REPOSITORY:-docker.io}/library/phpmyadmin:latest
+    container_name: telegram_anonymous_bot_phpmyadmin
+    hostname: telegram_anonymous_bot_phpmyadmin
+    depends_on:
+      - mysql
+    env_file:
+      - .env
+    environment:
+      PMA_HOST: mysql
+    ports:
+      - ${PHPMYADMIN_PORT}:80
+    logging:
+      options:
+        max-size: "1m"
+        max-file: "10"
+    networks:
+      - backend
+
+#  sqlpad:
+#    restart: always
+#    image: ${REPOSITORY:-docker.io}/sqlpad/sqlpad:5.6.0
+#    hostname: 'sqlpad'
+#    depends_on:
+#      - 'mysql'
+#    ports:
+#      - '3000:3000'
+#    environment:
+#      SQLPAD_ADMIN: 'admin'
+#      SQLPAD_ADMIN_PASSWORD: 'admin'
+#      SQLPAD_APP_LOG_LEVEL: debug
+#      SQLPAD_WEB_LOG_LEVEL: warn
+#      SQLPAD_SEED_DATA_PATH: /etc/sqlpad/seed-data
+#      SQLPAD_BACKEND_DB_URI: mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}
+#      SQLPAD_SESSION_STORE: 'database'
+#      SQLPAD_DB_PATH: '/var/lib/sqlpad'
+#      SQLPAD_DB_IN_MEMORY: 'false'
+#      SQLPAD_QUERY_RESULT_STORE: 'database'
+#      # This adds a pre-configured connection to point to the database
+#      # used as the backend for SQLPad itself
+#      SQLPAD_CONNECTIONS__mysqld__name: 'MYSQL_BOT_DB'
+#      SQLPAD_CONNECTIONS__mysqld__driver: mysql2
+#      SQLPAD_CONNECTIONS__mysqld__host: mysql
+#      SQLPAD_CONNECTIONS__mysqld__port: 3306
+#      SQLPAD_CONNECTIONS__mysqld__database: ${MYSQL_DATABASE}
+#      SQLPAD_CONNECTIONS__mysqld__username: ${MYSQL_USER}
+#      SQLPAD_CONNECTIONS__mysqld__password: ${MYSQL_PASSWORD}
+#    networks:
+#      - backend
+
+networks:
+  backend:
+    name: telegram_anonymous_bot_network
